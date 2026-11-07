@@ -627,6 +627,48 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	if (texDecoder == nullptr)
 		return;
 
+	// guest data that isn't (fully) mapped: decode the mapped part padded with zeros, skip the texture if nothing is mapped,
+	// instead of faulting in the decoder
+	std::vector<uint8> paddedInput;
+	{
+		MPTR srcAddr = (MPTR)(textureLoader.inputData - memory_base);
+		uint32 srcSize = std::max<uint32>((uint32)textureLoader.maxOffsetOutdated, 1);
+		auto isMapped = [](MPTR addr) { return memory_isAddressRangeAccessible(memory_physicalToVirtual(addr), 1); };
+		if (!isMapped(srcAddr) || !isMapped(srcAddr + srcSize - 1))
+		{
+			// length of the mapped run at the start
+			uint32 mappedSize = 0;
+			if (isMapped(srcAddr))
+			{
+				uint32 lo = 1, hi = srcSize - 1; // mapped [srcAddr, srcAddr+lo) is known, srcAddr+hi isn't
+				while (lo < hi)
+				{
+					uint32 mid = lo + (hi - lo) / 2;
+					if (isMapped(srcAddr + mid))
+						lo = mid + 1;
+					else
+						hi = mid;
+				}
+				mappedSize = lo;
+			}
+			static uint32 s_unmappedLogCount = 0;
+			if (s_unmappedLogCount < 32)
+			{
+				s_unmappedLogCount++;
+				cemuLog_log(LogType::Force, "Texture upload: guest data 0x{:08x} size 0x{:x} only 0x{:x} bytes mapped{} (fmt {:04x} {}x{} pitch {} tileMode {} mip {} slice {})", srcAddr, srcSize, mappedSize, mappedSize ? ", rest zero-filled" : ", skipped", (uint32)format, width, height, pitch, (uint32)tileMode, mipIndex, sliceIndex);
+			}
+			if (mappedSize == 0)
+			{
+				if (textureLoader.dump)
+					free(textureLoader.dumpRGBA);
+				return;
+			}
+			paddedInput.assign((size_t)srcSize + 0x10000, 0); // slack: swizzled addressing can reach a little past surfSize
+			memcpy(paddedInput.data(), textureLoader.inputData, mappedSize);
+			textureLoader.inputData = paddedInput.data();
+		}
+	}
+
 	textureLoader.decodedTexelCountX = texDecoder->getTexelCountX(&textureLoader);
 	textureLoader.decodedTexelCountY = texDecoder->getTexelCountY(&textureLoader);
 
