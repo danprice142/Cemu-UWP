@@ -1,4 +1,5 @@
 #include "Cafe/GraphicPack/GraphicPack2.h"
+#include "Cafe/OS/RPL/rpl.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "Common/FileStream.h"
 #include "WindowSystem.h"
@@ -149,9 +150,14 @@ void GraphicPack2::UnloadPatches()
 	// do this by calling RevertPatchesForModule for every module?
 	for (auto& itr : list_modules)
 		RevertPatchesForModule(itr);
-	// delete all patches
+	// delete all patches. Their code caves go back to the allocator, or every relaunch in the same process moves the
+	// caves further up the code cave area
 	for (auto itr : list_patchGroups)
+	{
+		if (itr->codeCaveMem.GetMPTR() != 0)
+			RPLLoader_ReleaseCodeCaveMem(itr->codeCaveMem);
 		delete itr;
+	}
 	list_patchGroups.clear();
 }
 

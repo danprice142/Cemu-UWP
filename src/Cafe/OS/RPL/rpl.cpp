@@ -1803,6 +1803,9 @@ void RPLLoader_UnloadModule(RPLDependency* rplDependency, bool skipPPCCalls)
 	RPLLoader_decrementModuleDependencyRefs(rpl);
 	// save module config for this module in the debugger
 	g_debuggerDispatcher.NotifyModuleUnloaded(rpl);
+	// graphic packs must forget the module too: a title started again in the same process (UWP frontend) would
+	// otherwise get its patches applied to the previous run's freed module as well
+	GraphicPack2::NotifyModuleUnloaded(rpl);
 	// call rpl_entry with reason unload
 	if (!skipPPCCalls)
 	{
