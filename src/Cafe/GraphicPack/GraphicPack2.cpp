@@ -332,7 +332,16 @@ void GraphicPack2::ActivateForCurrentTitle()
 
 void GraphicPack2::Reset()
 {
+	// the UWP frontend starts titles again in the same process, so the packs must be deactivated here or
+	// Activate() of the next launch sees m_activated and skips loading the patches and shaders
+	for (const auto& gp : s_active_graphic_packs)
+		gp->Deactivate();
 	s_active_graphic_packs.clear();
+	{
+		// the title's modules are unloaded by now, none of them may receive patches of the next launch
+		std::lock_guard<std::recursive_mutex> lock(mtx_patches);
+		list_modules.clear();
+	}
 	s_isReady = false;
 }
 
